@@ -82,7 +82,7 @@
         void                *user_data;         // User data (optional).
     };
 
-    struct async_server {
+    struct server_context {
         struct server_info  info;           // Server information.
         struct pollfds      *polled;        // Pollfds struct to monitor file descriptors.
         htable_t            *contexts;      // Hash table to store client contexts.
@@ -148,25 +148,25 @@
     /// @brief Create a listener socket on the specified port, TCP/IPv4 protocol.
     /// @param port The port to listen on.
     /// @return 0 on success, -1 on failure.
-    int as_bind (struct async_server *server, const char* ipv4);
+    int as_bind (struct server_context *server, const char* ipv4);
 
     /// @brief Accept a connection from a client for the listener socket.
     /// @param server The server struct to accept the connection on.
     /// @param handler The event handler for the client connection.
     /// @return Pointer to the client context on success, NULL on failure.
-    struct client_context *as_accept (struct async_server *server, event_callback_t handler);
+    struct client_context *as_accept (struct server_context *server, event_callback_t handler);
 
     /// @brief Disconnect the client and free the associated resources.
     /// @param server The server struct.
     /// @param client The client context to disconnect.
-    void as_disconnect (struct async_server* server, struct client_context *client);
+    void as_disconnect (struct server_context* server, struct client_context *client);
 
     /// @brief Main loop to poll file descriptors for events and process connections.
     /// @return 0 on success, -1 on failure.
-    int as_poll (struct async_server *server, void* data);
+    int as_poll (struct server_context *server, void* data);
 
     /// @brief Cleanup function to free resources.
-    void as_cleanup (struct async_server *server);
+    void as_cleanup (struct server_context *server);
 
     // --- Function Definitions, pollfd wrapper --- //
 

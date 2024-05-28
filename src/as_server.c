@@ -30,7 +30,7 @@
 // SOFTWARE.
 // ==============================================================================
 
-#include "async_server.h"
+#include "as_server.h"
 
 // --- Static function definitions --- //
 
@@ -423,7 +423,7 @@ ssize_t iobuff_send (struct client_context *client, struct io_buffer *buffer) {
 
 // --- Function definitions, server --- //
 
-int as_bind (struct async_server *server, const char* ipv4) {
+int as_bind (struct server_context *server, const char* ipv4) {
 
     assert(server && ipv4);
 
@@ -480,7 +480,7 @@ error:
     return retvalue;
 }
 
-struct client_context *as_accept (struct async_server *server, event_callback_t handler) {
+struct client_context *as_accept (struct server_context *server, event_callback_t handler) {
 
     assert(server && handler);
     
@@ -557,7 +557,7 @@ error: // GOTO: Return NULL on error.
 /// @brief Process the state of the client connection.
 /// @param client The client struct.
 /// @return 0 on success, -1 on failure.
-void as_disconnect (struct async_server *server, struct client_context *client) {
+void as_disconnect (struct server_context *server, struct client_context *client) {
 
     assert(server && client);
 
@@ -574,7 +574,7 @@ void as_disconnect (struct async_server *server, struct client_context *client) 
     free(client);
 }
 
-int as_poll (struct async_server *server, void* data) {
+int as_poll (struct server_context *server, void* data) {
 
     assert(server);
 
@@ -610,7 +610,7 @@ int as_poll (struct async_server *server, void* data) {
     return 0;
 }
 
-void as_cleanup (struct async_server *server) {
+void as_cleanup (struct server_context *server) {
 
     assert(server);
 
