@@ -54,7 +54,7 @@ static int client_compare (const void *key1, const void *key2) {
     const int valueA = *((int *) key1);
     const int valueB = *((int *) key2);
 
-    return (valueA - valueB);
+    return !(valueA - valueB);
 }
 
 /// @brief Round up the size to the next power of two.
@@ -423,13 +423,13 @@ ssize_t iobuff_send (struct client_context *client, struct io_buffer *buffer) {
 
 // --- Function definitions, server --- //
 
-int as_bind (struct server_context *server, const char* ipv4) {
+int as_bind (struct server_context *server, const char* ipv4, event_callback_t handler) {
 
-    assert(server && ipv4);
+    assert(server && ipv4 && handler);
 
     int retvalue = 0;
 
-    if ((server->contexts = htable_create(MAX_CLIENTS, client_hash, client_compare)) == NULL) {
+    if ((server->contexts = htable_create(MAX_CLIENTS, client_hash, client_compare, NULL)) == NULL) {
         LOG_ERROR("Error creating hash table");
         retvalue = -1;
         goto error;
@@ -465,6 +465,9 @@ int as_bind (struct server_context *server, const char* ipv4) {
         LOG_ERROR("Error adding event to pollfds");
         goto error_server;
     }
+
+    // Set the event handler for the server.
+    server->event_handler = handler;
 
     return 0;
 
@@ -601,7 +604,12 @@ int as_poll (struct server_context *server, void* data) {
         }
 
         // If there are events on the client socket, process the connection.
-        struct client_context *client = htable_get(server->contexts, &server->polled->fds[i].fd);
+        struct client_context *client = NULL;
+        
+        if ((client = htable_get(server->contexts, &server->polled->fds[i].fd)) == NULL) {
+            LOG_ERROR("Error getting client context from hash table");
+            continue;
+        }
 
         // Call the client event handler to process the connection, no need to check for NULL.
         client->event_handler(client, server->polled->fds[i].revents, data);

@@ -148,7 +148,7 @@
     /// @brief Create a listener socket on the specified port, TCP/IPv4 protocol.
     /// @param port The port to listen on.
     /// @return 0 on success, -1 on failure.
-    int as_bind (struct server_context *server, const char* ipv4);
+    int as_bind (struct server_context *server, const char* ipv4, event_callback_t handler);
 
     /// @brief Accept a connection from a client for the listener socket.
     /// @param server The server struct to accept the connection on.
