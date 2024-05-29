@@ -1,8 +1,8 @@
 // ==============================================================================
-//                             Generic Hash map
+//                             Generic Hash table
 // ==============================================================================
 //
-// Description: This library provides basic implementation of a generic hash map
+// Description: This library provides basic implementation of a generic hash table
 // using a linked list for collision resolution. To use this library, user must
 // provide a hash function and a comparison function for the keys and optionally
 // a wrapper function for the retrieval of the hash value for type safety.
@@ -32,95 +32,140 @@
 
 #include "htable.h"
 
+// --- Static Function Definitions --- //
+
+/// @brief Retrieve the hash value for the key.
+/// @param table The hash table to retrieve the hash value from.
+/// @param key The key for the hash node.
+/// @return The hash value for the key.
+static size_t get_hash (const htable_t *table, const void *key) {
+    return table->hash(key) % table->size;
+}
+
+static void *htable_default_copy (const void *src) {
+    return (void *) src;
+}
+
+static void htable_default_free (void *src) {
+    (void) src;
+    return;
+}
+
 // --- Function Definitions --- //
 
-/// @brief Create a hash map with the specified size.
-htable_t *htable_create (size_t size, hash_func_t hash, comp_func_t comp) {
+/// @brief Create a hash table with the specified size.
+htable_t *htable_create (size_t size, htable_hash_t hash, htable_keq_t keq, const struct callbacks *cbs) {
 
-    assert(size > 0);
-
-    // Allocate memory for the hash map.
-    htable_t *map = malloc(sizeof(*map));
-
-    if (map == NULL) {
-        LOG_ERROR("Error creating hash map: memory allocation failed");
+    if (size == 0 || hash == NULL || keq == NULL) {
         return NULL;
     }
 
     // Allocate memory for the hash table.
-    map->table = malloc(size * sizeof(*map->table));
+    htable_t *table = NULL;
 
-    if (map->table == NULL) {
-        LOG_ERROR("Error creating hash table: memory allocation failed");
-        free(map);
+    if ((table = calloc(1U, sizeof(*table))) == NULL) {
         return NULL;
     }
 
-    // Zero out the memory for the hash table.
-    memset(map->table, 0, size * sizeof(*map->table));
+    // Allocate memory for the hash table.;
+    if ((table->table = calloc(size, sizeof(*table->table))) == NULL) {
+        free(table);
+        return NULL;
+    }
 
-    // Initialize the remaining fields of the hash map.
-    map->size = size;
+    // Initialize the remaining fields of the hash table.
+    table->size = size;
 
     // Callbacks.
-    map->hash = hash;
-    map->comp = comp;
+    table->hash = hash;
+    table->keq = keq;
 
-    return map;
+    table->cbs.kcpy = htable_default_copy;
+    table->cbs.vcpy = htable_default_copy;
+    table->cbs.kfree = htable_default_free;
+    table->cbs.vfree = htable_default_free;
+    
+    // Update the callbacks if provided.
+    if (cbs != NULL) {
+        table->cbs.kcpy = cbs->kcpy ? cbs->kcpy : table->cbs.kcpy;
+        table->cbs.vcpy = cbs->vcpy ? cbs->vcpy : table->cbs.vcpy;
+        table->cbs.kfree = cbs->kfree ? cbs->kfree : table->cbs.kfree;
+        table->cbs.vfree = cbs->vfree ? cbs->vfree : table->cbs.vfree;
+    }
+
+    return table;
 }
 
-/// @brief Destroy the hash map and free resources.
-void htable_destroy (htable_t *map) {
+/// @brief Destroy the hash table and free resources.
+void htable_destroy (htable_t *table) {
 
-    assert(map);
-
-    if (map == NULL) {
-        LOG_ERROR("Error destroying hash map: map is NULL");
+    if (table == NULL || table->table == NULL) {
         return;
     }
 
-    if (map->table != NULL) {
-        free(map->table);
+    // Free the hash nodes.
+    for (size_t idx = 0; idx < table->size; idx++) {
+
+        struct htable_node *current = table->table[idx];
+
+        // Traverse the linked list.
+        do {
+            struct htable_node *next = current->next;
+
+            // Free the key and value.
+            table->cbs.kfree(current->key);
+            table->cbs.vfree(current->value);
+
+            // Free the hash node.
+            free(current);
+
+            current = next;
+        } while (current != NULL);
     }
 
-    // Free the hash map.
-    free(map);
+    // Free the hash table array.
+    free(table->table);
+
+    // Free the hash table.
+    free(table);
 }
 
-/// @brief Insert a key-value pair into the hash map.
-int htable_insert (htable_t *map, const void *key, const void *value) {
+/// @brief Insert a key-value pair into the hash table.
+int htable_insert (htable_t *table, const void *key, const void *value) {
 
-    assert(map && map->table && value);
+    if (table == NULL || table->table == NULL || value == NULL) {
+        return -1;
+    }
 
     // Calculate the hash index.
-    const size_t hashed_key = get_hash(map, key);
+    const size_t hashed_key = get_hash(table, key);
 
     // Get the current hash node corresponding to the hashed key.
-    hnode_t *current = map->table[hashed_key];
+    struct htable_node *current = table->table[hashed_key];
 
     // Check if there is another hash node present already, if not, create a new one.
     if (current == NULL) {
-        hnode_t *new_node = malloc(sizeof(*new_node));
+        struct htable_node *new_node = NULL;
 
-        if (new_node == NULL) {
-            LOG_ERROR("Error inserting key-value pair: memory allocation failed");
-            return -1;
+        if ((new_node = malloc(sizeof(*new_node))) == NULL) {
+            return -2;
         }
 
-        new_node->key = (void *) key;
-        new_node->value = (void *) value;
+        new_node->key = table->cbs.kcpy(key);
+        new_node->value = table->cbs.vcpy(value);
         new_node->next = NULL;
 
-        map->table[hashed_key] = new_node;
+        table->table[hashed_key] = new_node;
     }
     // Traverse the linked list.
     else {
-        hnode_t *prev = NULL;
+        struct htable_node *prev = NULL;
         // Check if the key already exists in the current linked list.
         do {
-            if (!map->comp(current->key, key)) {
-                // Update the value of the hash node.
-                current->value = (void *) value;
+            if (table->keq(current->key, key)) {
+                // Free the previous value and update it with the new value.
+                table->cbs.vfree(current->value);
+                current->value = table->cbs.vcpy(value);
                 return 0;
             }
             // Move to the next hash node.
@@ -129,43 +174,49 @@ int htable_insert (htable_t *map, const void *key, const void *value) {
         } while (current != NULL);
 
         // If the key does not exist in the linked list, create a new hash node.
-        hnode_t *new_node = malloc(sizeof(*new_node));
+        struct htable_node *new_node = NULL;
 
-        if (new_node == NULL) {
-            LOG_ERROR("Error inserting key-value pair: memory allocation failed");
-            return -1;
+        if ((new_node = malloc(sizeof(*new_node))) == NULL) {
+            return -2;
         }
 
-        new_node->key = (void *) key;
-        new_node->value = (void *) value;
+        new_node->key = table->cbs.kcpy(key);
+        new_node->value = table->cbs.vcpy(value);
         prev->next = new_node;
     }
 
     return 0;
 }
 
-/// @brief Remove a key-value pair from the hash map.
-int htable_remove (htable_t *map, const void *key) {
+/// @brief Remove a key-value pair from the hash table.
+int htable_remove (htable_t *table, const void *key) {
 
-    assert(map && map->table);
+    if (table == NULL || table->table == NULL) {
+        return -1;
+    }
 
     // Calculate the hash index.
-    const size_t hashed_key = get_hash(map, key);
+    const size_t hashed_key = get_hash(table, key);
 
-    hnode_t *current = map->table[hashed_key];
-    hnode_t *prev = NULL;
+    struct htable_node *current = table->table[hashed_key];
+    struct htable_node *prev = NULL;
 
     while (current != NULL) {
         // Check if the key exists in the linked list and remove it.
-        if (!map->comp(current->key, key)) {
+        if (table->keq(current->key, key)) {
             
             // Link the previous hash node to the next hash node.
             if (prev == NULL) {
-                map->table[hashed_key] = current->next;
+                table->table[hashed_key] = current->next;
             } else {
                 prev->next = current->next;
             }
 
+            // Free the key and value.
+            table->cbs.kfree(current->key);
+            table->cbs.vfree(current->value);
+
+            // Free the hash node.
             free(current);
 
             return 0;
@@ -180,19 +231,21 @@ int htable_remove (htable_t *map, const void *key) {
 }
 
 /// @brief Get the hash node for the specified key.
-void *htable_get (htable_t *map, const void *key) {
-    
-    assert(map && map->table);
+void *htable_get (htable_t *table, const void *key) {
+
+    if (table == NULL || table->table == NULL) {
+        return NULL;
+    }
 
     // Calculate the hash index.
-    const size_t hashed_key = get_hash(map, key);
+    const size_t hashed_key = get_hash(table, key);
 
-    hnode_t *current = map->table[hashed_key];
+    struct htable_node *current = table->table[hashed_key];
 
     // Traverse the linked list to find the hash node.
     while (current != NULL) {
         // Check if the key matches the current hash node.
-        if (!map->comp(current->key, key)) {
+        if (table->keq(current->key, key)) {
             return current->value;
         }
 
